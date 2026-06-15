@@ -17,6 +17,7 @@
 #include <chainparams.h>
 #include <compat/sanity.h>
 #include <consensus/validation.h>
+#include <dace/service.h>
 #include <downloader.h>
 #include <fs.h>
 #include <hash.h>
@@ -295,6 +296,8 @@ void Shutdown(NodeContext& node)
     }
 
     node.chain_clients.clear();
+
+    dace::Service::Teardown();
     UnregisterAllValidationInterfaces();
     GetMainSignals().UnregisterBackgroundSignalScheduler();
     globalVerifyHandle.reset();
@@ -1747,6 +1750,8 @@ bool AppInitMain(NodeContext& node)
     }, DUMP_BANS_INTERVAL);
 
     g_wallet_init_interface.StartProcess(node);
+
+    dace::Service::Initialize(Params().GetConsensus(), GetDataDir().string());
 
     return true;
 }

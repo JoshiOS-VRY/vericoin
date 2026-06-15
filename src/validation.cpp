@@ -15,6 +15,7 @@
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
 #include <cuckoocache.h>
+#include <dace/connect.h>
 #include <flatfile.h>
 #include <hash.h>
 #include <index/txindex.h>
@@ -1546,6 +1547,9 @@ DisconnectResult CChainState::DisconnectBlock(const CBlock& block, const CBlockI
     // move best block pointer to prevout block
     view.SetBestBlock(pindex->pprev->GetBlockHash());
 
+    // Binary Chain v3 (DACE) post-disconnect undo. No-op pre-activation.
+    dace::OnDisconnectBlock(block, pindex, Params().GetConsensus());
+
     return fClean ? DISCONNECT_OK : DISCONNECT_UNCLEAN;
 }
 
@@ -1990,6 +1994,10 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
 
     int64_t nTime6 = GetTimeMicros(); nTimeCallbacks += nTime6 - nTime5;
     LogPrint(BCLog::BENCH, "    - Callbacks: %.2fms [%.2fs (%.2fms/blk)]\n", MILLI * (nTime6 - nTime5), nTimeCallbacks * MICRO, nTimeCallbacks * MILLI / nBlocksTotal);
+
+    // Binary Chain v3 (DACE) post-connect orchestration. Pre-activation
+    // this call is a no-op so legacy chain behavior is bit-identical.
+    dace::OnConnectBlock(block, pindex, chainparams.GetConsensus());
 
     return true;
 }
@@ -3228,6 +3236,14 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     // Check timestamp
     if (block.GetBlockTime() > nAdjustedTime + MAX_FUTURE_BLOCK_TIME)
         return state.Invalid(BlockValidationResult::BLOCK_TIME_FUTURE, "time-too-new", "block timestamp too far in the future");
+
+    // Binary Chain v3 (DACE) extended-header consensus check.
+    {
+        std::string dace_err;
+        if (!dace::CheckExtendedHeader(block, nHeight, consensusParams, dace_err)) {
+            return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-dace-header", dace_err);
+        }
+    }
 
     return true;
 }

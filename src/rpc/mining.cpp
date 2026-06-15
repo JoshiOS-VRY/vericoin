@@ -34,6 +34,7 @@
 #include <validationinterface.h>
 #include <warnings.h>
 #include <wallet/rpcwallet.h> // Probably need to avoid that ...
+#include <wallet/ismine.h>
 
 #include <memory>
 #include <stdint.h>
@@ -68,7 +69,7 @@ static UniValue generateBlocks(const CTxMemPool& mempool, const CScript& coinbas
             LOCK(cs_main);
             IncrementExtraNonce(pblock, ::ChainActive().Tip(), nExtraNonce);
         }
-        while (nMaxTries > 0 && pblock->nNonce < std::numeric_limits<uint32_t>::max() && !CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus()) && !ShutdownRequested()) {
+        while (nMaxTries > 0 && pblock->nNonce < std::numeric_limits<uint32_t>::max() && !CheckProofOfWork(pblock->GetWorkHash(), pblock->nBits, Params().GetConsensus()) && !ShutdownRequested()) {
             ++pblock->nNonce;
             --nMaxTries;
         }
@@ -816,6 +817,7 @@ UniValue minerstart(const JSONRPCRequest& request)
         "\nStart mining (Verium only)",
         {
             {"nthreads", RPCArg::Type::NUM, RPCArg::Optional::NO, "Number of thread to allocate to mining."},
+            {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Optional wallet address for block rewards. When omitted, a new internal address is reserved for this mining session."},
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",
@@ -825,8 +827,9 @@ UniValue minerstart(const JSONRPCRequest& request)
             }
         },
         RPCExamples{
-            HelpExampleCli("minerstart", "")
-    + HelpExampleRpc("minerstart", "")
+            HelpExampleCli("minerstart", "4")
+    + HelpExampleCli("minerstart", "4 \"myaddress\"")
+    + HelpExampleRpc("minerstart", "4, \"myaddress\"")
         },
     }.Check(request);
 
@@ -844,9 +847,27 @@ UniValue minerstart(const JSONRPCRequest& request)
 
     int nThreads = request.params[0].get_int();
 
+    const CScript* pCoinbaseScript = nullptr;
+    CScript fixedCoinbaseScript;
+    if (!request.params[1].isNull()) {
+        const std::string address = request.params[1].get_str();
+        if (address.empty()) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Empty mining reward address");
+        }
+        CTxDestination dest = DecodeDestination(address);
+        if (!IsValidDestination(dest)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid mining reward address");
+        }
+        if (!(wallet->IsMine(dest) & ISMINE_SPENDABLE)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Mining reward address does not belong to this wallet");
+        }
+        fixedCoinbaseScript = GetScriptForDestination(dest);
+        pCoinbaseScript = &fixedCoinbaseScript;
+    }
+
     LOCK(cs_main);
 
-    GenerateVerium(true, wallet, nThreads, g_rpc_node->connman.get(), g_rpc_node->mempool);
+    GenerateVerium(true, wallet, nThreads, g_rpc_node->connman.get(), g_rpc_node->mempool, pCoinbaseScript);
 
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("status",   "active");
@@ -1165,7 +1186,7 @@ static const CRPCCommand commands[] =
 
     { "miner",              "minerstatus",            &minerstatus,            {} },
     { "miner",              "minerstop",              &minerstop,              {} },
-    { "miner",              "minerstart",             &minerstart,             {"nthreads"} },
+    { "miner",              "minerstart",             &minerstart,             {"nthreads","address"} },
 
     { "staking",            "stakingstatus",          &stakingstatus,            {} },
     { "staking",            "stakingstop",            &stakingstop,              {} },

@@ -1,0 +1,118 @@
+# Binary Chain v3 (DACE) — isolated dual-daemon test orchestration.
+#
+# Spawns vericoind + veriumd in the binarytest chain (-binarytest mode):
+#   - Distinct ports far from mainnet
+#   - Distinct message-start magic ("DACE") that physically cannot peer
+#     with vericoin/verium mainnet
+#   - All state in named volumes; teardown wipes everything
+#
+# Usage:
+#   docker compose -f docker-compose.yml up --build
+#   docker compose -f docker-compose.yml down -v   # full teardown
+#
+# Once the C++ daemon's dace::Service is wired into init.cpp (one of the
+# remaining "wire it up" tasks called out in the plan), this orchestration
+# runs DACE end-to-end. Until then, use the Python sim at
+# vericoin/test/binarychain/sim/ to demo DACE behavior.
+
+version: "3.9"
+
+services:
+  vericoind:
+    build:
+      context: ../../../..        # repo root
+      dockerfile: vericoin/test/binarychain/docker/Dockerfile.vericoind
+    container_name: bc-vericoind
+    restart: unless-stopped
+    networks:
+      binarytest:
+        ipv4_address: 172.28.0.10
+    ports:
+      - "41683:41683"   # RPC (binarytest VRC)
+      - "41684:41684"   # P2P (binarytest VRC)
+    volumes:
+      - vericoind_data:/home/dace/.vericonomy
+      - ./conf/vericoin-binarytest.conf:/home/dace/.vericonomy/binarytest-vericoin/vericoin.conf:ro
+    command:
+      - vericoind
+      - "-binarytest"
+      - "-vericoin"
+      - "-printtoconsole"
+      - "-server"
+      - "-rpcallowip=172.28.0.0/16"
+      - "-rpcbind=0.0.0.0"
+      - "-addnode=172.28.0.20:41988"   # peer with veriumd over getxheaders
+    healthcheck:
+      test: ["CMD-SHELL", "vericoin-cli -binarytest -vericoin -rpcwait getblockchaininfo > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  veriumd:
+    build:
+      context: ../../../..
+      dockerfile: vericoin/test/binarychain/docker/Dockerfile.veriumd
+    container_name: bc-veriumd
+    restart: unless-stopped
+    networks:
+      binarytest:
+        ipv4_address: 172.28.0.20
+    ports:
+      - "41987:41987"   # RPC (binarytest VRM)
+      - "41988:41988"   # P2P (binarytest VRM)
+    volumes:
+      - veriumd_data:/home/dace/.verium
+      - ./conf/verium-binarytest.conf:/home/dace/.verium/binarytest-verium/verium.conf:ro
+    command:
+      - veriumd
+      - "-binarytest"
+      - "-verium"
+      - "-printtoconsole"
+      - "-server"
+      - "-rpcallowip=172.28.0.0/16"
+      - "-rpcbind=0.0.0.0"
+      - "-addnode=172.28.0.10:41684"
+    healthcheck:
+      test: ["CMD-SHELL", "verium-cli -binarytest -verium -rpcwait getblockchaininfo > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  observer:
+    # Lightweight Python container that periodically pulls
+    # binarychain_status / binarychain_metrics from both daemons and
+    # publishes a Prometheus textfile for the monitoring stack.
+    build:
+      context: ../../../..
+      dockerfile: vericoin/test/binarychain/docker/Dockerfile.observer
+    container_name: bc-observer
+    restart: unless-stopped
+    depends_on:
+      vericoind:
+        condition: service_healthy
+      veriumd:
+        condition: service_healthy
+    networks:
+      binarytest:
+        ipv4_address: 172.28.0.30
+    environment:
+      VRC_RPC_URL: "http://rpcuser:rpcpass@172.28.0.10:41683"
+      VRM_RPC_URL: "http://rpcuser:rpcpass@172.28.0.20:41987"
+      OBSERVER_INTERVAL_SEC: "10"
+    volumes:
+      - observer_metrics:/var/lib/observer
+    ports:
+      - "9101:9101"   # Prometheus scrape endpoint (HTTP /metrics)
+
+networks:
+  binarytest:
+    name: bc-binarytest
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  vericoind_data:
+  veriumd_data:
+  observer_metrics:

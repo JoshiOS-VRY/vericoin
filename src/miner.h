@@ -210,7 +210,7 @@ void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash
 
 bool CheckWork(CBlock* pblock);
 
-void GenerateVerium(bool fGenerate, std::shared_ptr<CWallet> pwallet, int nThreads, CConnman* connman, CTxMemPool* mempool);
+void GenerateVerium(bool fGenerate, std::shared_ptr<CWallet> pwallet, int nThreads, CConnman* connman, CTxMemPool* mempool, const CScript* fixed_coinbase = nullptr);
 void GenerateVericoin(bool fGenerate, std::shared_ptr<CWallet> pwallet, CConnman* connman, CTxMemPool* mempool);
 bool IsMining();
 bool IsStaking();

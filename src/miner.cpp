@@ -14,6 +14,12 @@
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
 #include <crypto/scrypt.h>
+#include <dace/activation.h>
+#include <dace/anchor_lifecycle.h>
+#include <dace/beacon.h>
+#include <dace/joint_anchor.h>
+#include <dace/reward_accumulator.h>
+#include <dace/service.h>
 #include <net.h>
 #include <policy/feerate.h>
 #include <policy/policy.h>
@@ -207,6 +213,29 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
 
     pblock->nNonce         = 0;
     pblocktemplate->vTxSigOpsCost[0] = WITNESS_SCALE_FACTOR * GetLegacySigOpCount(*pblock->vtx[0]);
+
+    // Binary Chain v3 (DACE) extended header fields. Pre-activation these
+    // remain null (matching legacy serialization). At or above activation
+    // height the miner / staker references the locally-active Joint Anchor,
+    // the current beacon, the running reward accumulator root, and the
+    // coupling-epoch index.
+    if (dace::IsActive(nHeight, chainparams.GetConsensus())) {
+        const Consensus::Params& cparams = chainparams.GetConsensus();
+        const uint32_t epoch = cparams.fIsVericoin
+                                   ? dace::EpochIndexVRC(nHeight, cparams)
+                                   : dace::EpochIndexVRM(nHeight, cparams);
+        pblock->epochIndex = epoch;
+        if (dace::Service::IsInitialized()) {
+            const dace::JointAnchor* active = dace::Service::Get().Anchors().Active();
+            if (active) pblock->pairedAnchorRef = active->GetHash();
+            dace::Beacon beacon;
+            if (dace::Service::Get().GetSelectedBeacon(epoch, beacon)) {
+                pblock->beaconRef = beacon.beacon_hash;
+            }
+            pblock->rewardAccumulatorRoot =
+                dace::Service::Get().CurrentAccumulator(epoch).CurrentRoot();
+        }
+    }
 
     BlockValidationState state;
     if (pwallet && !TestBlockValidity(state, chainparams, *pblock, pindexPrev, false, false)) {
@@ -486,6 +515,9 @@ void IncrementExtraNonce(CBlock* pblock, const CBlockIndex* pindexPrev, unsigned
 ////////////////////////////////////////////////////////////////////////////
 double hashrate = 0.;
 bool fGenerateVerium = false;
+static Mutex g_miner_coinbase_mutex;
+static CScript g_miner_fixed_coinbase;
+static bool g_miner_use_fixed_coinbase = false;
 bool fGenerateVericoin = false;
 static int64_t timeElapsed = 30000;
 double dHashesPerMin = 0.0;
@@ -619,16 +651,29 @@ void Miner(std::shared_ptr<CWallet> pwallet, CConnman* connman, CTxMemPool* memp
     unsigned char *scratchbuf = scrypt_buffer_alloc();
     if(!scratchbuf){memory = false;}
 
-    // Each thread has it's own nonce
+    // Each thread has its own nonce
+    CScript scriptPubKey;
+    bool use_fixed_coinbase = false;
+    {
+        LOCK(g_miner_coinbase_mutex);
+        use_fixed_coinbase = g_miner_use_fixed_coinbase;
+        if (use_fixed_coinbase) {
+            scriptPubKey = g_miner_fixed_coinbase;
+        }
+    }
+
     OutputType output_type = pwallet->m_default_change_type != OutputType::CHANGE_AUTO ? pwallet->m_default_change_type : pwallet->m_default_address_type;
     ReserveDestination reservedest(pwallet.get(), output_type);
 
     CTxDestination dest;
-    bool ret = reservedest.GetReservedDestination(dest, true);
-    if (!ret)
-    {
-        fGenerateVerium = false;
-        return;
+    if (!use_fixed_coinbase) {
+        bool ret = reservedest.GetReservedDestination(dest, true);
+        if (!ret)
+        {
+            fGenerateVerium = false;
+            return;
+        }
+        scriptPubKey = GetScriptForDestination(dest);
     }
 
     unsigned int nExtraNonce = 0;
@@ -646,21 +691,23 @@ void Miner(std::shared_ptr<CWallet> pwallet, CConnman* connman, CTxMemPool* memp
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
                     return;
             }
-            while (connman->GetNodeCount(CConnman::CONNECTIONS_ALL) < 5)
             {
-                LogPrintf("Mining inactive, not enough node...\n");
+                const int min_peers = Params().MiningRequiresPeers() ? 5 : 0;
+                while (connman->GetNodeCount(CConnman::CONNECTIONS_ALL) < min_peers)
+                {
+                    LogPrintf("Mining inactive, not enough node...\n");
 
-                if (!fGenerateVerium)
-                    return;
+                    if (!fGenerateVerium)
+                        return;
 
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
-                    return;
+                    if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
+                        return;
+                }
             }
 
             // Create new block
             unsigned int nTransactionsUpdatedLast = mempool->GetTransactionsUpdated();
             CBlockIndex* pindexPrev = ::ChainActive().Tip();
-            CScript scriptPubKey = GetScriptForDestination(dest);
 
             std::unique_ptr<CBlockTemplate> pblocktemplate;
             try
@@ -692,23 +739,43 @@ void Miner(std::shared_ptr<CWallet> pwallet, CConnman* connman, CTxMemPool* memp
             // Search
             int64_t nStart = GetTime();
             uint256 hashTarget = ArithToUint256(arith_uint256().SetCompact(pblock->nBits));
+            // Binary Chain v3 (DACE): when extended-header rules are active
+            // the scrypt input includes the daceMerkleRoot substitution, so
+            // the SIMD multi-hasher (which reads the raw in-memory layout)
+            // cannot be used directly. The slow path drives GetWorkHash()
+            // per nonce — acceptable for binarytest and for the small number
+            // of DACE blocks mined on mainnet right after activation.
+            const bool dace_active =
+                dace::IsActive(pindexPrev->nHeight + 1, Params().GetConsensus());
             while (fGenerateVerium)
             {
                 unsigned int nHashesDone = 0;
                 if (fGenerateVerium)
                 {
-                    // scrypt^2
-                    int nHashes = 0;
-                    if (scrypt_N_1_1_256_multi(BEGIN(pblock->nVersion), hashTarget, &nHashes, scratchbuf))
-                    {
-                        // Found a solution
-                        SetThreadPriority(THREAD_PRIORITY_NORMAL);
-                        CheckWork(pblock);
-                        reservedest.KeepDestination();
-                        SetThreadPriority(THREAD_PRIORITY_LOWEST);
+                    if (dace_active) {
+                        const uint256 hash = pblock->GetWorkHash();
+                        if (UintToArith256(hash) <= UintToArith256(hashTarget)) {
+                            SetThreadPriority(THREAD_PRIORITY_NORMAL);
+                            CheckWork(pblock);
+                            reservedest.KeepDestination();
+                            SetThreadPriority(THREAD_PRIORITY_LOWEST);
+                        }
+                        nHashesDone = 1;
+                        ++pblock->nNonce;
+                    } else {
+                        // scrypt^2 multi-hash (legacy fast path)
+                        int nHashes = 0;
+                        if (scrypt_N_1_1_256_multi(BEGIN(pblock->nVersion), hashTarget, &nHashes, scratchbuf))
+                        {
+                            // Found a solution
+                            SetThreadPriority(THREAD_PRIORITY_NORMAL);
+                            CheckWork(pblock);
+                            reservedest.KeepDestination();
+                            SetThreadPriority(THREAD_PRIORITY_LOWEST);
+                        }
+                        nHashesDone += nHashes;
+                        pblock->nNonce += nHashes;
                     }
-                    nHashesDone += nHashes;
-                    pblock->nNonce += nHashes;
                 }
 
                 // Hash meter
@@ -742,7 +809,7 @@ void Miner(std::shared_ptr<CWallet> pwallet, CConnman* connman, CTxMemPool* memp
                     break;
                 if (ShutdownRequested())
                     return;
-                if ( connman->GetNodeCount(CConnman::CONNECTIONS_ALL) < 1)
+                if (Params().MiningRequiresPeers() && connman->GetNodeCount(CConnman::CONNECTIONS_ALL) < 1)
                     break;
                 if (pblock->nNonce >= 0xffff0000)
                     break;
@@ -773,8 +840,19 @@ bool IsMining()
     return fGenerateVerium;
 }
 
-void GenerateVerium(bool fGenerate, std::shared_ptr<CWallet> pwallet, int nThreads, CConnman* connman, CTxMemPool* mempool)
+void GenerateVerium(bool fGenerate, std::shared_ptr<CWallet> pwallet, int nThreads, CConnman* connman, CTxMemPool* mempool, const CScript* fixed_coinbase)
 {
+    {
+        LOCK(g_miner_coinbase_mutex);
+        if (fixed_coinbase && !fixed_coinbase->empty()) {
+            g_miner_fixed_coinbase = *fixed_coinbase;
+            g_miner_use_fixed_coinbase = true;
+        } else {
+            g_miner_use_fixed_coinbase = false;
+            g_miner_fixed_coinbase.clear();
+        }
+    }
+
     fGenerateVerium = fGenerate;
     static boost::thread_group* minerThreads = NULL;
 
@@ -851,15 +929,18 @@ void Staker(std::shared_ptr<CWallet> pwallet, CConnman* connman, CTxMemPool* mem
                 if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
                     return;
             }
-            while (connman->GetNodeCount(CConnman::CONNECTIONS_ALL) < 5)
             {
-                LogPrintf("Staking inactive, not enough node...\n");
+                const int min_peers = Params().MiningRequiresPeers() ? 5 : 0;
+                while (connman->GetNodeCount(CConnman::CONNECTIONS_ALL) < min_peers)
+                {
+                    LogPrintf("Staking inactive, not enough node...\n");
 
-                if (!fGenerateVericoin)
-                    return;
+                    if (!fGenerateVericoin)
+                        return;
 
-                if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
-                    return;
+                    if (!connman->interruptNet.sleep_for(std::chrono::seconds(10)))
+                        return;
+                }
             }
             while (pwallet->IsLocked()) {
                 LogPrintf("Staking inactive because wallet is locked...\n");

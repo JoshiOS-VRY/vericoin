@@ -23,8 +23,17 @@ BITCOIN_CLI_NAME=vericoin-cli
 BITCOIN_TX_NAME=vericoin-tx
 BITCOIN_WALLET_TOOL_NAME=vericoin-wallet
 
-dnl Define Verium as default coin type
+dnl Define Verium vs Vericoin client (builds veriumd or vericoind).
 client_is_verium=no
+AC_ARG_ENABLE([verium],
+  [AS_HELP_STRING([--enable-verium], [build veriumd and Verium utilities])],
+  [if test "x$enableval" = xyes; then client_is_verium=yes; fi])
+AC_ARG_ENABLE([vericoin],
+  [AS_HELP_STRING([--enable-vericoin], [build vericoind and Vericoin utilities (default)])],
+  [if test "x$enableval" = xyes; then client_is_verium=no; fi])
+if test "x$enable_verium" = xyes && test "x$enable_vericoin" = xyes; then
+  AC_MSG_ERROR([Choose one client per configure run: --enable-verium OR --enable-vericoin])
+fi
 if test "x$client_is_verium" = xyes; then
   AC_DEFINE(CLIENT_IS_VERIUM, 1, [Set verium as default coin type])
   AC_PACKAGE_NAME=Verium

@@ -18,10 +18,35 @@
  * in the block is a special one that creates a new coin owned by the creator
  * of the block.
  */
+/**
+ * Block header.
+ *
+ * Legacy layout (pre-DACE activation):
+ *   nVersion | hashPrevBlock | hashMerkleRoot | nTime | nBits | nNonce
+ *   plus an out-of-hash nFlags ppcoin marker preserved via SER_POSMARKER.
+ *
+ * Extended layout (DACE active, per DACE-1):
+ *   nVersion | hashPrevBlock | hashMerkleRoot | nTime | nBits | nNonce |
+ *   pairedAnchorRef | beaconRef | rewardAccumulatorRoot | epochIndex
+ *
+ * In the extended layout the PoS marker moves into nVersion bit 30 so the
+ * marker is included in the header hash. The legacy nFlags field is still
+ * stored on the in-memory CBlockHeader (kept for backwards compatibility with
+ * deserialised legacy blocks) but is not serialised once DACE is active.
+ *
+ * The serialization path is selected via a thread-local "extended mode" flag
+ * set by callers that know the block's height vs. the activation height.
+ * See dace::WithExtendedSerialization.
+ */
+/** Thread-local accessor for DACE-1 extended-header serialization mode.
+ *  Defined in dace/header.cpp. Returns true when the current scope is
+ *  inside dace::ExtendedSerializationScope. */
+bool dace_block_extended_serialization_enabled();
+
 class CBlockHeader
 {
 public:
-    // header
+    // legacy fields
     int32_t nVersion;
     uint256 hashPrevBlock;
     uint256 hashMerkleRoot;
@@ -29,11 +54,22 @@ public:
     uint32_t nBits;
     uint32_t nNonce;
 
-    // ppcoin: A copy from CBlockIndex.nFlags from other clients. We need this information because we are using headers-first synchronization.
+    // ppcoin legacy marker (still populated for legacy blocks, no longer
+    // serialized after DACE activation)
     uint32_t nFlags;
 
-    static const int32_t CURRENT_VERSION=7;
-    static const int32_t NORMAL_SERIALIZE_SIZE=80;
+    // DACE-1 extended fields (populated only for blocks at or above activation)
+    uint256 pairedAnchorRef;
+    uint256 beaconRef;
+    uint256 rewardAccumulatorRoot;
+    uint32_t epochIndex;
+
+    static const int32_t CURRENT_VERSION = 7;
+    static const int32_t NORMAL_SERIALIZE_SIZE = 80;
+    static const int32_t EXTENDED_SERIALIZE_SIZE = 180;
+
+    /** PoS marker is bit 30 of nVersion in the extended layout. */
+    static const int32_t POS_VERSION_BIT_MASK = (1 << 30);
 
     CBlockHeader()
     {
@@ -51,9 +87,18 @@ public:
         READWRITE(nBits);
         READWRITE(nNonce);
 
-        // ppcoin: do not serialize nFlags when computing hash
-        if (!(s.GetType() & SER_GETHASH) && s.GetType() & SER_POSMARKER)
-            READWRITE(nFlags);
+        if (UseExtendedSerialization(s)) {
+            // DACE-1 extended header. Always part of the hash; no SER_POSMARKER
+            // gating because the PoS marker now lives in nVersion bit 30.
+            READWRITE(pairedAnchorRef);
+            READWRITE(beaconRef);
+            READWRITE(rewardAccumulatorRoot);
+            READWRITE(epochIndex);
+        } else {
+            // Legacy ppcoin: do not serialize nFlags when computing hash.
+            if (!(s.GetType() & SER_GETHASH) && s.GetType() & SER_POSMARKER)
+                READWRITE(nFlags);
+        }
     }
 
     void SetNull()
@@ -65,11 +110,23 @@ public:
         nBits = 0;
         nNonce = 0;
         nFlags = 0;
+        pairedAnchorRef.SetNull();
+        beaconRef.SetNull();
+        rewardAccumulatorRoot.SetNull();
+        epochIndex = 0;
     }
 
     bool IsNull() const
     {
         return (nBits == 0);
+    }
+
+    /** PoS-marker helpers for the DACE-1 extended layout. Independent of nFlags. */
+    bool IsProofOfStakeMarked() const { return (nVersion & POS_VERSION_BIT_MASK) != 0; }
+    void SetProofOfStakeMarked(bool fSet)
+    {
+        if (fSet) nVersion |= POS_VERSION_BIT_MASK;
+        else nVersion &= ~POS_VERSION_BIT_MASK;
     }
 
     uint256 GetHash() const;
@@ -80,8 +137,19 @@ public:
     {
         return (int64_t)nTime;
     }
-};
 
+private:
+    /** Decide whether to use DACE-1 extended serialization for this stream.
+     *  Currently consults a thread-local flag set by
+     *  dace::ExtendedSerializationScope (see dace/header.h). The Stream
+     *  argument is reserved for future use (e.g., distinguishing wire vs
+     *  disk encoding). */
+    template <typename Stream>
+    static bool UseExtendedSerialization(Stream& s) {
+        (void)s;
+        return ::dace_block_extended_serialization_enabled();
+    }
+};
 
 class CBlock : public CBlockHeader
 {
@@ -129,13 +197,18 @@ public:
     CBlockHeader GetBlockHeader() const
     {
         CBlockHeader block;
-        block.nVersion       = nVersion;
-        block.hashPrevBlock  = hashPrevBlock;
-        block.hashMerkleRoot = hashMerkleRoot;
-        block.nTime          = nTime;
-        block.nBits          = nBits;
-        block.nNonce         = nNonce;
-        block.nFlags         = nFlags;
+        block.nVersion              = nVersion;
+        block.hashPrevBlock         = hashPrevBlock;
+        block.hashMerkleRoot        = hashMerkleRoot;
+        block.nTime                 = nTime;
+        block.nBits                 = nBits;
+        block.nNonce                = nNonce;
+        block.nFlags                = nFlags;
+        // DACE-1 extended fields (zero/null on legacy blocks).
+        block.pairedAnchorRef       = pairedAnchorRef;
+        block.beaconRef             = beaconRef;
+        block.rewardAccumulatorRoot = rewardAccumulatorRoot;
+        block.epochIndex            = epochIndex;
         return block;
     }
 

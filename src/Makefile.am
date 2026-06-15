@@ -145,6 +145,23 @@ BITCOIN_CORE_H = \
   consensus/consensus.h \
   consensus/tx_check.h \
   consensus/tx_verify.h \
+  dace/activation.h \
+  dace/connect.h \
+  dace/header.h \
+  dace/beacon.h \
+  dace/paired_view.h \
+  dace/ticket_registry.h \
+  dace/sortition.h \
+  dace/joint_anchor.h \
+  dace/anchor_lifecycle.h \
+  dace/reward_accumulator.h \
+  dace/claim.h \
+  dace/kernel.h \
+  dace/recovery.h \
+  dace/stale_coupling.h \
+  dace/metrics.h \
+  dace/net_messages.h \
+  dace/service.h \
   core_io.h \
   core_memusage.h \
   cuckoocache.h \
@@ -314,8 +331,26 @@ libbitcoin_server_a_SOURCES = \
   policy/settings.cpp \
   pos.cpp \
   pow.cpp \
+  dace/activation.cpp \
+  dace/connect.cpp \
+  dace/header.cpp \
+  dace/beacon.cpp \
+  dace/paired_view.cpp \
+  dace/ticket_registry.cpp \
+  dace/sortition.cpp \
+  dace/joint_anchor.cpp \
+  dace/anchor_lifecycle.cpp \
+  dace/reward_accumulator.cpp \
+  dace/claim.cpp \
+  dace/kernel.cpp \
+  dace/recovery.cpp \
+  dace/stale_coupling.cpp \
+  dace/metrics.cpp \
+  dace/net_messages.cpp \
+  dace/service.cpp \
   rest.cpp \
   rpc/blockchain.cpp \
+  rpc/dace.cpp \
   rpc/mining.cpp \
   rpc/misc.cpp \
   rpc/net.cpp \

@@ -1,0 +1,14 @@
+# Observer container: polls binarychain_status / binarychain_metrics from
+# both daemons and exposes a Prometheus textfile + HTTP /metrics endpoint
+# on port 9101.
+
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY vericoin/test/binarychain/observer/ /app/
+
+RUN pip install --no-cache-dir requests prometheus-client
+
+ENV PYTHONUNBUFFERED=1
+EXPOSE 9101
+ENTRYPOINT ["python", "observer.py"]

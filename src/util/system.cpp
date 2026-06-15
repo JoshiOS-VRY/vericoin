@@ -263,7 +263,9 @@ const std::list<SectionInfo> ArgsManager::GetUnrecognizedSections() const
     // Section names to be recognized in the config file.
     static const std::set<std::string> available_sections{
         CBaseChainParams::VERIUM,
-        CBaseChainParams::VERICOIN
+        CBaseChainParams::VERICOIN,
+        CBaseChainParams::BINARYTEST_VERICOIN,
+        CBaseChainParams::BINARYTEST_VERIUM,
     };
 
     LOCK(cs_args);
@@ -879,13 +881,31 @@ std::string ArgsManager::GetChainName() const
         return value.isNull() ? false : value.isBool() ? value.get_bool() : InterpretBool(value.get_str());
     };
 
-    const bool fVericoin = get_net("-vericoin");
-    const bool fVerium = get_net("-verium");
+    const bool fVericoin    = get_net("-vericoin");
+    const bool fVerium      = get_net("-verium");
+    const bool fBinaryTest  = get_net("-binarytest");
     const bool is_chain_arg_set = IsArgSet("-chain");
 
     if ((int)is_chain_arg_set + (int)fVericoin + (int)fVerium > 1) {
         throw std::runtime_error("Invalid combination of -vericoin, -verium and -chain. Can use at most one.");
     }
+
+    // -binarytest is a modifier flag that combines with -vericoin or -verium
+    // to select the isolated Binary Chain v3 test network. It cannot be
+    // combined with -chain. See vericoin/doc/dace/binarytest-network.md.
+    if (fBinaryTest) {
+        if (is_chain_arg_set) {
+            throw std::runtime_error("Cannot combine -binarytest with -chain. "
+                                     "Use -binarytest -vericoin OR -binarytest -verium.");
+        }
+        if (fVericoin) return CBaseChainParams::BINARYTEST_VERICOIN;
+        if (fVerium)   return CBaseChainParams::BINARYTEST_VERIUM;
+        // Default side when -binarytest alone is given: VRC, matching the
+        // legacy default for unflagged invocations.
+        if (IsVericoin) return CBaseChainParams::BINARYTEST_VERICOIN;
+        else            return CBaseChainParams::BINARYTEST_VERIUM;
+    }
+
     if (fVericoin)
         return CBaseChainParams::VERICOIN;
     if (fVerium)

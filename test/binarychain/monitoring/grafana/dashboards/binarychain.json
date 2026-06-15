@@ -1,0 +1,119 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "DACE activated (VRC)",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [{ "expr": "bc_activated{chain=\"vrc\"}" }],
+      "fieldConfig": { "defaults": { "mappings": [{"type":"value","options":{"0":{"text":"No"},"1":{"text":"Yes"}}}] } }
+    },
+    {
+      "type": "stat",
+      "title": "DACE activated (VRM)",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [{ "expr": "bc_activated{chain=\"vrm\"}" }],
+      "fieldConfig": { "defaults": { "mappings": [{"type":"value","options":{"0":{"text":"No"},"1":{"text":"Yes"}}}] } }
+    },
+    {
+      "type": "stat",
+      "title": "Current epoch (VRC)",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [{ "expr": "bc_current_epoch{chain=\"vrc\"}" }]
+    },
+    {
+      "type": "stat",
+      "title": "Stale-coupled (any chain)",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [{ "expr": "max(bc_stale_coupled)" }],
+      "fieldConfig": { "defaults": { "mappings": [{"type":"value","options":{"0":{"text":"No"},"1":{"text":"YES — investigate"}}}], "thresholds": {"mode":"absolute","steps":[{"value":null,"color":"green"},{"value":1,"color":"red"}]} } }
+    },
+    {
+      "type": "stat",
+      "title": "Active bonded tickets",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [{ "expr": "bc_bonded_tickets_active{chain=\"vrc\"}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Paired header lag (seconds)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "bc_paired_header_lag_p50_sec", "legendFormat": "p50 {{chain}}" },
+        { "expr": "bc_paired_header_lag_p95_sec", "legendFormat": "p95 {{chain}}" },
+        { "expr": "bc_paired_header_lag_p99_sec", "legendFormat": "p99 {{chain}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Divergent beacon selections (alert if non-zero)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [{ "expr": "bc_divergent_beacon_selections", "legendFormat": "{{chain}}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Consecutive missed anchors",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [{ "expr": "bc_consecutive_missed_anchors", "legendFormat": "{{chain}}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Top-10 ticket share (concentration)",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [{ "expr": "bc_top10_ticket_share", "legendFormat": "{{chain}}" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Reorgs at beacon",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [{ "expr": "bc_reorgs_at_beacon", "legendFormat": "{{chain}}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Claim redemptions (total vs rejected)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "bc_claim_redemptions_total", "legendFormat": "total {{chain}}" },
+        { "expr": "bc_claim_redemptions_rejected", "legendFormat": "rejected {{chain}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Recovery anchors (built vs activated)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "bc_recovery_anchors_built", "legendFormat": "built {{chain}}" },
+        { "expr": "bc_recovery_anchors_activated", "legendFormat": "activated {{chain}}" }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["binarychain", "dace", "binarytest"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "",
+  "title": "Binary Chain (binarytest)",
+  "uid": "binarychain-binarytest",
+  "version": 1,
+  "weekStart": ""
+}

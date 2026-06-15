@@ -11,6 +11,9 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <consensus/validation.h>
+#include <dace/anchor_lifecycle.h>
+#include <dace/net_messages.h>
+#include <dace/service.h>
 #include <hash.h>
 #include <merkleblock.h>
 #include <netmessagemaker.h>
@@ -28,6 +31,7 @@
 #include <validation.h>
 
 #include <memory>
+#include <array>
 #include <typeinfo>
 
 #if defined(NDEBUG)
@@ -1386,7 +1390,7 @@ static void RelayAddress(const CAddress& addr, bool fReachable, const CConnman& 
     const CSipHasher hasher = connman.GetDeterministicRandomizer(RANDOMIZER_ID_ADDRESS_RELAY).Write(hashAddr << 32).Write((GetTime() + hashAddr) / (24 * 60 * 60));
     FastRandomContext insecure_rand;
 
-    std::array<std::pair<uint64_t, CNode*>,2> best{{{0, nullptr}, {0, nullptr}}};
+    std::array<std::pair<uint64_t, CNode*>, 2> best{{{0, nullptr}, {0, nullptr}}};
     assert(nRelayNodes <= best.size());
 
     auto sortfunc = [&best, &hasher, nRelayNodes](CNode* pnode) {
@@ -3417,6 +3421,58 @@ bool ProcessMessage(CNode* pfrom, const std::string& msg_type, CDataStream& vRec
                 }
             }
         }
+        return true;
+    }
+
+    // ---- Binary Chain v3 (DACE) P2P messages (DACE-6) ----
+    // These are best-effort relay channels; an unknown / malformed message
+    // is logged but does not penalize the peer because mainnet peers will
+    // not have negotiated DACE protocol bits in early phases.
+    if (msg_type == dace::CMD_XHEADERS) {
+        if (!dace::Service::IsInitialized()) return true;
+        dace::XHeaders msg;
+        try { vRecv >> msg; } catch (...) {
+            LogPrint(BCLog::NET, "dace: malformed xheaders from peer=%d\n", pfrom->GetId());
+            return true;
+        }
+        dace::Service::Get().PairedHeaders().IngestHeaders(msg.headers);
+        LogPrint(BCLog::NET, "dace: ingested %u paired headers from peer=%d\n",
+                 static_cast<unsigned>(msg.headers.size()), pfrom->GetId());
+        return true;
+    }
+
+    if (msg_type == dace::CMD_GETXHEADERS) {
+        // Pre-implementation: ack without serving. A future revision walks
+        // our active chain headers and replies with an XHeaders message.
+        LogPrint(BCLog::NET, "dace: getxheaders from peer=%d (no-op in phase 1)\n",
+                 pfrom->GetId());
+        return true;
+    }
+
+    if (msg_type == dace::CMD_JA) {
+        if (!dace::Service::IsInitialized()) return true;
+        dace::JAMessage msg;
+        try { vRecv >> msg; } catch (...) {
+            LogPrint(BCLog::NET, "dace: malformed ja from peer=%d\n", pfrom->GetId());
+            return true;
+        }
+        dace::Service::Get().Anchors().Observe(msg.anchor);
+        LogPrint(BCLog::NET, "dace: observed JA epoch=%u from peer=%d\n",
+                 msg.anchor.epoch_index, pfrom->GetId());
+        return true;
+    }
+
+    if (msg_type == dace::CMD_JASIG) {
+        // Single-sig gossip: phase-1 receives but does not aggregate
+        // signatures into a quorum locally. The committee assembly path
+        // lands with p4-committee-dev.
+        LogPrint(BCLog::NET, "dace: jasig from peer=%d (assembly TBD)\n", pfrom->GetId());
+        return true;
+    }
+
+    if (msg_type == dace::CMD_GETJA) {
+        LogPrint(BCLog::NET, "dace: getja from peer=%d (no-op in phase 1)\n",
+                 pfrom->GetId());
         return true;
     }
 

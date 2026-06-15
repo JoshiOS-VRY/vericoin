@@ -19,6 +19,13 @@ public:
     /** Chain name strings */
     static const std::string VERICOIN;
     static const std::string VERIUM;
+    /** Binary Chain v3 (DACE) isolated test networks. These are deliberately
+     *  segregated from mainnet via distinct message-start magic, ports,
+     *  address prefixes, and datadirs so binarytest nodes physically cannot
+     *  connect to mainnet peers.
+     *  See vericoin/doc/dace/binarytest-network.md. */
+    static const std::string BINARYTEST_VERICOIN;
+    static const std::string BINARYTEST_VERIUM;
     ///@}
 
     const std::string& DataDir() const { return strDataDir; }

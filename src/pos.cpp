@@ -10,6 +10,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <consensus/validation.h>
+#include <dace/kernel.h>
 #include <primitives/transaction.h>
 #include <primitives/block.h>
 #include <uint256.h>
@@ -693,7 +694,24 @@ bool CheckStakeKernelHash(unsigned int nBits, CBlockIndex* pindexPrev, const CBl
 
     if (!GetKernelStakeModifier(pindexPrev, blockFrom.GetHash(), nTimeTx, nStakeModifier, nStakeModifierHeight, nStakeModifierTime, fPrintProofOfStake))
         return false;
-    ss << nStakeModifier;
+
+    // DACE PoSTaP v2 kernel coupling (DACE-2/DACE-4).
+    // The staking block's height is one above pindexPrev->nHeight. If DACE is
+    // active at that height, we replace the legacy uint64 stake modifier with
+    // a 256-bit modMix derived from the active Joint Anchor's beacon. If DACE
+    // requires a beacon/anchor that we can't currently observe, defer this
+    // kernel attempt — stale-coupling means the staker waits for paired-chain
+    // data, the chain itself does not halt.
+    const int staking_height = pindexPrev->nHeight + 1;
+    dace::KernelMix mix;
+    if (!dace::ComputeKernelMix(staking_height, nStakeModifier, nBits, nTimeTx, params, mix)) {
+        return error("CheckStakeKernelHash() : DACE active but no JA/beacon available; deferring");
+    }
+    if (mix.dace_active) {
+        ss << mix.dace_modifier;
+    } else {
+        ss << mix.legacy_modifier;
+    }
 
     ss << nTimeBlockFrom << nTxPrevOffset << txPrev->nTime << prevout.n << nTimeTx;
     hashProofOfStake = Hash(ss.begin(), ss.end());
@@ -745,6 +763,13 @@ unsigned int GetStakeModifierChecksum(const CBlockIndex* pindex)
 // Check stake modifier hard checkpoints
 bool CheckStakeModifierCheckpoints(int nHeight, unsigned int nStakeModifierChecksum)
 {
+    // binarytest uses a distinct genesis; mainnet hardcoded modifiers do not apply.
+    const std::string& net = Params().NetworkIDString();
+    if (net == CBaseChainParams::BINARYTEST_VERICOIN
+        || net == CBaseChainParams::BINARYTEST_VERIUM) {
+        return true;
+    }
+
     if ( mapStakeModifierCheckpoints.count(nHeight))
         return nStakeModifierChecksum == mapStakeModifierCheckpoints[nHeight];
 

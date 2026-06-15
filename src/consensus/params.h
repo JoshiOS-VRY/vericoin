@@ -52,6 +52,59 @@ struct Params {
     int nInitialCoinSupply;
     int VIP1Height;
 
+    /** ------------------------------------------------------------------------
+     *  Binary Chain v3 (DACE) parameters. See vericoin/doc/dace/DACE-0.
+     *  All defaults reflect the Balanced profile in DACE-0 Section "Frozen
+     *  consensus constants". Set BinaryChainHeight* to DaceNotScheduled to
+     *  preserve legacy behavior indefinitely.
+     *  ------------------------------------------------------------------------ */
+    static constexpr int DaceNotScheduled = -1;
+
+    /** Activation heights (chain-specific). One of these is consulted depending
+     *  on whether the running daemon is vericoind or veriumd. */
+    int BinaryChainHeightVRC{DaceNotScheduled};
+    int BinaryChainHeightVRM{DaceNotScheduled};
+
+    /** Bootstrap anchors shipped at activation. Hash of the last pre-fork header
+     *  on each chain plus the hash of the initial Joint Anchor JA_0. */
+    uint256 DaceBootstrapHeaderVRC;
+    uint256 DaceBootstrapHeaderVRM;
+    uint256 DaceBootstrapJAGenesis;
+
+    /** Beacon parameters (DACE-2). */
+    int BeaconDelta{12};                // VRM block stride between beacons
+    int BeaconK{50};                    // confirmations required to qualify
+    int BeaconFallbackWindow{6};        // bounded deterministic fallback ladder
+    int BeaconEpochVRC{60};             // VRC blocks per coupling epoch
+
+    /** Bonded ticket registry (DACE-3). */
+    int64_t TicketStakeUnit{1000 * 100000000LL}; // 1000 VRC in satoshi-equivalents
+    int TicketLockupEpochs{6};                   // L
+    int TicketUnbondDelayEpochs{2};
+
+    /** Committee (DACE-3). */
+    int CommitteeSize{128};               // M
+    int CommitteeQuorumNumerator{2};
+    int CommitteeQuorumDenominator{3};
+
+    /** Finality and recovery (DACE-4). */
+    int StaleGraceEpochs{3};
+    int StaleMaxEpochs{16};               // S_MAX
+    int FinalityWindowSeconds{6 * 60 * 60};
+    int RecoveryThresholdNumerator{4};    // 4/5 = 0.80
+    int RecoveryThresholdDenominator{5};
+    int FinalityGraceBlocks{18};
+    int CoupleLookaheadEpochs{5};
+
+    /** Economic divert bands (DACE-5). Expressed in basis points (1 / 10000). */
+    int DivertSigmaBpsVRM{400};           // sigma = 4% of VRM subsidy
+    int DivertPhiBpsVRC{1000};            // phi   = 10% of VRC fees
+
+    /** Claim lifecycle (DACE-5). */
+    int ClaimExpiryEpochs{1024};
+
+    /** Networking (DACE-6). */
+    int BcProtocolVersion{90100};
 };
 } // namespace Consensus
 

@@ -20,6 +20,7 @@ bench_bench_verium_SOURCES = \
   bench/block_assemble.cpp \
   bench/checkblock.cpp \
   bench/checkqueue.cpp \
+  bench/dace_header_hash.cpp \
   bench/data.h \
   bench/data.cpp \
   bench/duplicate_inputs.cpp \
@@ -119,6 +120,7 @@ bench_bench_vericoin_SOURCES = \
   bench/block_assemble.cpp \
   bench/checkblock.cpp \
   bench/checkqueue.cpp \
+  bench/dace_header_hash.cpp \
   bench/data.h \
   bench/data.cpp \
   bench/duplicate_inputs.cpp \

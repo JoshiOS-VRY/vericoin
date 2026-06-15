@@ -77,6 +77,14 @@ BASE_SCRIPTS = [
     # Longest test should go first, to favor running tests in parallel
     'wallet_hd.py',
     'wallet_backup.py',
+    # Binary Chain v3 (DACE) regtest suite
+    'dace_header_serialization.py',
+    'dace_beacon_selection.py',
+    'dace_committee_sortition.py',
+    'dace_joint_anchor_lifecycle.py',
+    'dace_reward_accumulator.py',
+    'dace_stale_coupling.py',
+    'dace_binarytest_fund_wallet.py',
     # vv Tests less than 5m vv
     'mining_getblocktemplate_longpoll.py',
     'feature_maxuploadtarget.py',

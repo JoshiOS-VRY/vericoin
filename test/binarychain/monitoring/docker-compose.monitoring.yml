@@ -1,0 +1,57 @@
+# Optional monitoring add-on for the binarytest network.
+# Run alongside the main docker-compose.yml:
+#
+#   docker compose \
+#     -f vericoin/test/binarychain/docker/docker-compose.yml \
+#     -f vericoin/test/binarychain/monitoring/docker-compose.monitoring.yml \
+#     up
+#
+# Provides:
+#   - Prometheus (scrape :9101 every 5s)
+#   - Grafana with the bundled "Binary Chain (binarytest)" dashboard auto-loaded
+
+version: "3.9"
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: bc-prometheus
+    restart: unless-stopped
+    networks:
+      - binarytest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    depends_on:
+      - observer
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: bc-grafana
+    restart: unless-stopped
+    networks:
+      - binarytest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+networks:
+  binarytest:
+    external: true
+    name: bc-binarytest
+
+volumes:
+  prom_data:
+  grafana_data:

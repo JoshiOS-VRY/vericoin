@@ -277,6 +277,219 @@ public:
     }
 };
 
+/**
+ * Binary Chain v3 (DACE) isolated test network — Vericoin side.
+ *
+ * Strict isolation from mainnet:
+ *   - Distinct message-start magic 0x44 0x41 0x43 0x45 ("DACE") prevents
+ *     accidental peer pairing with vericoin / verium mainnet.
+ *   - Distinct ports (41683 RPC, 41684 P2P) far from any production default.
+ *   - Distinct base58 prefixes ('B' = 25 for pubkey) so addresses generated
+ *     here cannot be confused with mainnet VRC addresses.
+ *   - Distinct bech32 HRP "vbtt" (VeriCoin Binary Test).
+ *   - No DNS seeds.
+ *   - DACE activates at height 50 so testers can reach activation quickly.
+ *
+ * See vericoin/doc/dace/binarytest-network.md.
+ */
+class CBinaryTestVericoinParams : public CChainParams {
+public:
+    CBinaryTestVericoinParams() {
+        strNetworkID   = CBaseChainParams::BINARYTEST_VERICOIN;
+        strCoinName    = "Vericoin (binarytest)";
+        strCurrencyName = "tVRC";
+
+        // Standard BIP heights live early on binarytest.
+        consensus.BIP34Height = 1;
+        consensus.BIP65Height = 1;
+        consensus.BIP66Height = 1;
+        consensus.CSVHeight   = 1;
+
+        consensus.VIP1Height       = 0;
+        consensus.nMaturity        = 4;            // fast tests
+        consensus.NextTargetV2Height = 0;
+        consensus.PoSTHeight       = 0;            // PoST from genesis
+        // PoW bootstrap window for binarychain_fund_wallet and coinbase maturity
+        // (wallet uses nMaturity+10 confirmations). PoS staking from height 16+.
+        consensus.PoSHeight        = 15;
+        consensus.nInitialCoinSupply = 1000000;    // seed for stake math
+
+        // Match binarytest-VRM: genesis uses nBits=0x207fffff; mainnet VRC powLimit
+        // rejects that compact encoding ("nBits below minimum work" on LoadGenesisBlock).
+        consensus.powLimit         = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        consensus.nPowTargetSpacing  = 5;          // 5s targets for fast tests
+        consensus.nPowTargetTimespan = 60;
+        consensus.fPowNoRetargeting = false;
+
+        consensus.posLimit         = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        consensus.nStakeTargetSpacing = 5;         // 5s stake targets
+        consensus.nStakeMinAge      = 60;          // 60s min age (test only)
+        consensus.nModifierInterval = 30;
+        consensus.nTargetTimespan   = 60;
+
+        consensus.nMinimumChainWork = uint256();
+        consensus.defaultAssumeValid = uint256();
+
+        consensus.fIsVericoin = true;
+
+        // DACE activates very early so testers can demo lifecycle quickly.
+        consensus.BinaryChainHeightVRC = 50;
+        consensus.BinaryChainHeightVRM = 50;
+        consensus.BeaconDelta          = 4;        // small stride
+        consensus.BeaconK              = 4;        // 4 confirmations
+        consensus.BeaconFallbackWindow = 4;
+        consensus.BeaconEpochVRC       = 10;       // 10 VRC blocks per epoch
+        consensus.TicketStakeUnit      = 100 * 100000000LL;
+        consensus.TicketLockupEpochs   = 3;
+        consensus.TicketUnbondDelayEpochs = 1;
+        consensus.CommitteeSize        = 8;
+        consensus.StaleGraceEpochs     = 2;
+        consensus.StaleMaxEpochs       = 6;
+        consensus.RecoveryThresholdNumerator   = 4;
+        consensus.RecoveryThresholdDenominator = 5;
+        consensus.FinalityGraceBlocks  = 6;
+        consensus.CoupleLookaheadEpochs = 5;
+        consensus.DivertSigmaBpsVRM = 400;
+        consensus.DivertPhiBpsVRC   = 1000;
+        consensus.ClaimExpiryEpochs = 256;
+        consensus.BcProtocolVersion = 90100;
+
+        // Distinct message-start magic for absolute isolation from mainnet.
+        // "DACE" in ASCII.
+        pchMessageStart[0] = 0x44; // 'D'
+        pchMessageStart[1] = 0x41; // 'A'
+        pchMessageStart[2] = 0x43; // 'C'
+        pchMessageStart[3] = 0x45; // 'E'
+        nDefaultPort = 41684;
+        m_assumed_blockchain_size = 1;
+        m_assumed_chain_state_size = 1;
+
+        genesis = CreateGenesisBlock(strNetworkID, 1748052400, 1, 0x207fffff, 1, 1000 * COIN);
+        consensus.hashGenesisBlock = genesis.GetWorkHash();
+
+        vFixedSeeds.clear();
+        vSeeds.clear();  // no DNS seeds; binarytest peers only via -addnode
+
+        // Distinct address prefixes. 'B' (25) = pubkey, 'C' (28) = script,
+        // 153 = secret. These differ from mainnet VRC (70/132/198) so
+        // addresses cannot be cross-pasted.
+        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1, 25);
+        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1, 28);
+        base58Prefixes[SECRET_KEY]     = std::vector<unsigned char>(1, 153);
+        base58Prefixes[EXT_PUBLIC_KEY] = {0xDA, 0xCE, 0xBB, 0x92};
+        base58Prefixes[EXT_SECRET_KEY] = {0xDA, 0xCE, 0xAE, 0x01};
+
+        bech32_hrp = "vbtt";
+
+        fDefaultConsistencyChecks = true;
+        fRequireStandard          = false;
+        m_is_test_chain           = true;
+        m_is_mockable_chain       = true;
+        fMiningRequiresPeers      = false;
+
+        checkpointData = { {} };
+        chainTxData    = ChainTxData{0, 0, 0};
+    }
+};
+
+/**
+ * Binary Chain v3 (DACE) isolated test network — Verium side.
+ * Same isolation guarantees as CBinaryTestVericoinParams.
+ * Address prefixes are also distinct from CBinaryTestVericoinParams so the
+ * two sides of the binarytest are not cross-compatible at the address level.
+ */
+class CBinaryTestVeriumParams : public CChainParams {
+public:
+    CBinaryTestVeriumParams() {
+        strNetworkID    = CBaseChainParams::BINARYTEST_VERIUM;
+        strCoinName     = "Verium (binarytest)";
+        strCurrencyName = "tVRM";
+
+        consensus.BIP34Height = 1;
+        consensus.BIP65Height = 1;
+        consensus.BIP66Height = 1;
+        consensus.CSVHeight   = 1;
+
+        consensus.VIP1Height           = 0;
+        consensus.nMaturity            = 4;
+        consensus.NextTargetV2Height   = 0;
+        consensus.PoSTHeight           = 0;
+        consensus.PoSHeight            = 0;
+        consensus.nInitialCoinSupply   = 0;
+
+        consensus.powLimit             = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        consensus.nPowTargetSpacing    = 5;
+        consensus.nPowTargetTimespan   = 60;
+        consensus.fPowNoRetargeting    = false;
+
+        consensus.posLimit             = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        consensus.nStakeTargetSpacing  = 0;
+        consensus.nStakeMinAge         = 0;
+        consensus.nModifierInterval    = 0;
+        consensus.nTargetTimespan      = 0;
+
+        consensus.nMinimumChainWork    = uint256();
+        consensus.defaultAssumeValid   = uint256();
+
+        consensus.fIsVericoin = false;
+
+        consensus.BinaryChainHeightVRC = 50;
+        consensus.BinaryChainHeightVRM = 50;
+        consensus.BeaconDelta          = 4;
+        consensus.BeaconK              = 4;
+        consensus.BeaconFallbackWindow = 4;
+        consensus.BeaconEpochVRC       = 10;
+        consensus.TicketStakeUnit      = 100 * 100000000LL;
+        consensus.TicketLockupEpochs   = 3;
+        consensus.TicketUnbondDelayEpochs = 1;
+        consensus.CommitteeSize        = 8;
+        consensus.StaleGraceEpochs     = 2;
+        consensus.StaleMaxEpochs       = 6;
+        consensus.RecoveryThresholdNumerator   = 4;
+        consensus.RecoveryThresholdDenominator = 5;
+        consensus.FinalityGraceBlocks  = 6;
+        consensus.CoupleLookaheadEpochs = 5;
+        consensus.DivertSigmaBpsVRM = 400;
+        consensus.DivertPhiBpsVRC   = 1000;
+        consensus.ClaimExpiryEpochs = 256;
+        consensus.BcProtocolVersion = 90100;
+
+        pchMessageStart[0] = 0x44;
+        pchMessageStart[1] = 0x41;
+        pchMessageStart[2] = 0x43;
+        pchMessageStart[3] = 0x45;
+        nDefaultPort = 41988;
+        m_assumed_blockchain_size = 1;
+        m_assumed_chain_state_size = 1;
+
+        genesis = CreateGenesisBlock(strNetworkID, 1748052400, 1, 0x207fffff, 1, 1000 * COIN);
+        consensus.hashGenesisBlock = genesis.GetVeriumHash();
+
+        vFixedSeeds.clear();
+        vSeeds.clear();
+
+        // Different prefixes than VRC binarytest side: 'M' (50) pubkey,
+        // 'm' (110) script, 178 secret. Keeps the two sides clearly
+        // distinguishable in wallets and explorers.
+        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1, 50);
+        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1, 110);
+        base58Prefixes[SECRET_KEY]     = std::vector<unsigned char>(1, 178);
+        base58Prefixes[EXT_PUBLIC_KEY] = {0xDA, 0xCE, 0xCC, 0x92};
+        base58Prefixes[EXT_SECRET_KEY] = {0xDA, 0xCE, 0xCE, 0x01};
+
+        bech32_hrp = "mbtt";
+
+        fDefaultConsistencyChecks = true;
+        fRequireStandard          = false;
+        m_is_test_chain           = true;
+        m_is_mockable_chain       = true;
+        fMiningRequiresPeers      = false;
+
+        checkpointData = { {} };
+        chainTxData    = ChainTxData{0, 0, 0};
+    }
+};
+
 static std::unique_ptr<const CChainParams> globalChainParams;
 
 const CChainParams &Params() {
@@ -290,6 +503,10 @@ std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain)
         return std::unique_ptr<CChainParams>(new CVericoinParams());
     else if (chain == CBaseChainParams::VERIUM)
         return std::unique_ptr<CChainParams>(new CVeriumParams());
+    else if (chain == CBaseChainParams::BINARYTEST_VERICOIN)
+        return std::unique_ptr<CChainParams>(new CBinaryTestVericoinParams());
+    else if (chain == CBaseChainParams::BINARYTEST_VERIUM)
+        return std::unique_ptr<CChainParams>(new CBinaryTestVeriumParams());
     throw std::runtime_error(strprintf("%s: Unknown chain %s.", __func__, chain));
 }
 
